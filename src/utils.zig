@@ -6,17 +6,16 @@ pub fn genRandomArray(r: std.Random, comptime E: type, comptime N: usize) [N]E {
 }
 
 /// T: Type of elements of array
-/// N: Current array size
 /// S: Desired result array size
 /// arry: actual array to repeat
 pub fn repeatArr(
+    alloc: Allocator,
     comptime T: type,
-    comptime N: u64,
     comptime S: u64,
-    arr: *[N]T
-) [S]T {
+    arr: []T
+) ![]T {
     var remainingCnt: u64 = S;
-    var resultArr = [_]T{0} ** S;
+    var resultArr: []u64 = try alloc.alloc(u64, S);
     var trackingIdx: u64 = 0;
 
     while (true) {
@@ -45,4 +44,5 @@ test "repeatArr" {
 }
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const expectEqualSlices = std.testing.expectEqualSlices;
