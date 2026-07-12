@@ -1,4 +1,4 @@
-- [ ] Setup ztags with default program
+- [X] Setup ztags with default program
 - [ ] Write a program to generate random integers using pseudo-random generator in zig
 - [ ] Add ability to generate two columns with X% of similar rows to join on
 - [ ] Implement Nested Loop Join
