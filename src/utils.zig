@@ -36,13 +36,18 @@ pub fn repeatArr(
 }
 
 test "repeatArr" {
-    const arr =  [_]u64{ 1, 2, 3 };
+    var arr =  [_]u64{ 1, 2, 3 };
+    const smp_allocator: Allocator = .{
+        .ptr = undefined,
+        .vtable = &SmpAllocator.vtable,
+    };
 
-    const resultArr = repeatArr(u64, 3, 5, arr);
+    const resultArr: []u64 = try repeatArr(smp_allocator, u64, 5, &arr);
     const expectedResultArr = [_]u64{ 1, 2, 3, 1, 2 };
-    try expectEqualSlices(u64, &expectedResultArr, &resultArr);
+    try expectEqualSlices(u64, &expectedResultArr, resultArr);
 }
 
 const std = @import("std");
+const SmpAllocator = std.heap.SmpAllocator;
 const Allocator = std.mem.Allocator;
 const expectEqualSlices = std.testing.expectEqualSlices;
