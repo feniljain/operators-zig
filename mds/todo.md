@@ -1,7 +1,8 @@
-- [ ] Setup ztags with default program
-- [ ] Write a program to generate random integers using pseudo-random generator in zig
-- [ ] Add ability to generate two columns with X% of similar rows to join on
+- [X] Setup ztags with default program
+- [X] Write a program to generate random integers using pseudo-random generator in zig
+- [ ] Add ability to generate two columns with second bigger one an extension of first one
 - [ ] Implement Nested Loop Join
+- [ ] Add ability to generate two columns with X% of similar rows to join on
 - [ ] Add ability to generate string columns
 - [ ] Implement Hash Join
 - [ ] Add ability to add heavy columns to both sides of dataset to increase payload size in final join output

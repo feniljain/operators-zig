@@ -1,71 +1,85 @@
-const std = @import("std");
-const Io = std.Io;
+const DEFAULT_BATCH_SIZE: u64 = 8192;
+const DEFAULT_BUILD_SIZE: u64 = 1000;
+const DEFAULT_PROBE_SIZE: u64 = 1000000;
+const DEFAULT_BUILD_NDV: u64 = 100;
 
-const joins = @import("joins");
+pub fn main() !void {
+    const smp_allocator: Allocator = .{
+        .ptr = undefined,
+        .vtable = &SmpAllocator.vtable,
+    };
 
-pub fn main(init: std.process.Init) !void {
-    // Prints to stderr, unbuffered, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
+    const result = try genDataset(smp_allocator, prng.random());
 
-    // This is appropriate for anything that lives as long as the process.
-    const arena: std.mem.Allocator = init.arena.allocator();
+    std.debug.print("Size of build record batch: {}\n", .{result.build.numRows()});
+    std.debug.print("Size of probe record batch: {}\n", .{result.probe.numRows()});
+}
 
-    // Accessing command line arguments:
-    const args = try init.minimal.args.toSlice(arena);
-    for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
+fn buildRecordBatch(alloc: Allocator, arr: []u64) !RecordBatch {
+    const arrRef = try utils.toArrowArrRef(alloc, arr);
+    // defer arrRef.release();
+
+    const fields = [_]Field{
+        .{ .name = "a", .data_type = &uint64Type, .nullable = false },
+    };
+
+    var recordBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = &fields });
+    defer recordBatchBuilder.deinit();
+
+    try recordBatchBuilder.setColumn(0, arrRef);
+
+    return try recordBatchBuilder.finish();
+}
+
+const GenDatasetResult = struct {
+    build: RecordBatch,
+    probe: RecordBatch,
+};
+
+fn genDataset(alloc: Allocator, rng: std.Random) !GenDatasetResult {
+    const ndv = DEFAULT_BUILD_NDV;
+
+    var distinctVals = utils.genRandomArray(rng, u64, ndv);
+    const max_u64: u64 = std.math.maxInt(u64);
+
+    for (0..distinctVals.len) |idx|  {
+        if (distinctVals[idx] > max_u64) {
+            distinctVals[idx] = distinctVals[idx] % max_u64;
+        }
     }
 
-    // In order to do I/O operations need an `Io` instance.
-    const io = init.io;
+    const buildArr = try utils.repeatArr(alloc, u64, DEFAULT_BUILD_SIZE, &distinctVals);
+    rng.shuffle(u64, buildArr);
 
-    // Stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
-    const stdout_writer = &stdout_file_writer.interface;
+    const probeArr = try utils.repeatArr(alloc, u64, DEFAULT_PROBE_SIZE, &distinctVals);
+    rng.shuffle(u64, probeArr);
 
-    try joins.printAnotherMessage(stdout_writer);
-
-    try stdout_writer.flush(); // Don't forget to flush!
+    return .{ .build = try buildRecordBatch(alloc, buildArr), .probe = try buildRecordBatch(alloc, probeArr) };
 }
 
-test "simple test" {
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(gpa, 42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "fuzz example" {
-    try std.testing.fuzz({}, testOne, .{});
-}
-
-fn testOne(context: void, smith: *std.testing.Smith) !void {
-    _ = context;
-    // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(u8) = .empty;
-    defer list.deinit(gpa);
-    while (!smith.eos()) switch (smith.value(enum { add_data, dup_data })) {
-        .add_data => {
-            const slice = try list.addManyAsSlice(gpa, smith.value(u4));
-            smith.bytes(slice);
-        },
-        .dup_data => {
-            if (list.items.len == 0) continue;
-            if (list.items.len > std.math.maxInt(u32)) return error.SkipZigTest;
-            const len = smith.valueRangeAtMost(u32, 1, @min(32, list.items.len));
-            const off = smith.valueRangeAtMost(u32, 0, @intCast(list.items.len - len));
-            try list.appendSlice(gpa, list.items[off..][0..len]);
-            try std.testing.expectEqualSlices(
-                u8,
-                list.items[off..][0..len],
-                list.items[list.items.len - len ..],
-            );
-        },
+test "simple_nested_loop_join_benchmark" {
+    const smp_allocator: Allocator = .{
+        .ptr = undefined,
+        .vtable = &SmpAllocator.vtable,
     };
+
+    var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
+    const result = try genDataset(smp_allocator, prng.random());
+
+    std.debug.print("Size of build record batch: {}\n", .{result.build.numRows()});
+    std.debug.print("Size of probe record batch: {}\n", .{result.probe.numRows()});
 }
+
+const std = @import("std");
+const SmpAllocator = std.heap.SmpAllocator;
+const Allocator = std.mem.Allocator;
+
+const utils = @import("utils");
+
+const zarrow = @import("zarrow");
+const Field = zarrow.Field;
+const RecordBatchBuilder = zarrow.RecordBatchBuilder;
+const RecordBatch = zarrow.RecordBatch;
+const ArrayRef = zarrow.ArrayRef;
+const uint64Type = zarrow.DataType{ .uint64 = {} };
