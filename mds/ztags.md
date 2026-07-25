@@ -4,4 +4,3 @@
 ```sh
 ../../ztags/zig-out/bin/ztags src/main.zig
 ```
-

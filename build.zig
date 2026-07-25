@@ -12,6 +12,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // ==================================
+
+    // utils.zig
+
     const utils =  b.createModule(.{
         .root_source_file = b.path("src/utils.zig"),
         .target = target,
@@ -19,6 +23,19 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("utils", utils);
+
+    // ==================================
+
+    // zarrow dep
+
+    const zarrow_dep = b.dependency("zarrow", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe.root_module.addImport("zarrow", zarrow_dep.module("zarrow"));
+
+    // ==================================
 
     b.installArtifact(exe);
 

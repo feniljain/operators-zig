@@ -15,11 +15,8 @@ pub fn main() !void {
     try genDataset(smp_allocator, prng.random());
 }
 
-fn genDataset(alloc: Allocator, rng: std.Random) !void { // return array of arrow batches from here
-    // generate build side
-    // - generate core distinct numbers
-    // - expand them to BULID_SIDE size
-    // - shuffle
+// TODO(feniljain): return batches from arrow from here
+fn genDataset(alloc: Allocator, rng: std.Random) !void {
     const ndv = DEFAULT_BUILD_NDV;
 
     var distinctVals = utils.genRandomArray(rng, u64, ndv);
@@ -40,23 +37,46 @@ fn genDataset(alloc: Allocator, rng: std.Random) !void { // return array of arro
 
     std.debug.print("Size of build array: {}\n", .{buildArr.len});
 
-    // generate probe side
-    // - take core distinct numbers
-    // - expand them to PROBE_SIDE size
-    // - shuffle
-
     const probeArr = try utils.repeatArr(alloc, u64, DEFAULT_PROBE_SIZE, &distinctVals);
     rng.shuffle(u64, probeArr);
 
     std.debug.print("Size of probe array: {}\n", .{probeArr.len});
+
+    // =========
+    var builder = try zarrow.Int32Builder.init(std.heap.page_allocator, 3);
+    defer builder.deinit();
+
+    try builder.append(10);
+    try builder.appendNull();
+    try builder.append(30);
+
+    var arr_ref = try builder.finish();
+    defer arr_ref.release();
+
+    const arr = zarrow.Int32Array{ .data = arr_ref.data() };
+
+    std.debug.print("len={d}, v0={d}, isNull1={any}, v2={d}\n", .{
+        arr.len(),
+        try arr.value(0),
+        arr.isNull(1),
+        try arr.value(2),
+    });
+    // =========
 }
 
 test "simple_nested_loop_join_benchmark" {
+    const smp_allocator: Allocator = .{
+        .ptr = undefined,
+        .vtable = &SmpAllocator.vtable,
+    };
+
     var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
-    genDataset(prng.random());
+    try genDataset(smp_allocator, prng.random());
 }
 
 const std = @import("std");
 const SmpAllocator = std.heap.SmpAllocator;
 const Allocator = std.mem.Allocator;
+
 const utils = @import("utils");
+const zarrow = @import("zarrow");
