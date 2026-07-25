@@ -34,6 +34,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("zarrow", zarrow_dep.module("zarrow"));
+    utils.addImport("zarrow", zarrow_dep.module("zarrow"));
 
     // ==================================
 
