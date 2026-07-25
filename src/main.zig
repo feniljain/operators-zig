@@ -9,14 +9,35 @@ pub fn main() !void {
         .vtable = &SmpAllocator.vtable,
     };
 
-    std.debug.print("Namastey Duniyaa!\n", .{});
-
     var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
-    try genDataset(smp_allocator, prng.random());
+    const result = try genDataset(smp_allocator, prng.random());
+
+    std.debug.print("Size of build record batch: {}\n", .{result.build.numRows()});
+    std.debug.print("Size of probe record batch: {}\n", .{result.probe.numRows()});
 }
 
-// TODO(feniljain): return batches from arrow from here
-fn genDataset(alloc: Allocator, rng: std.Random) !void {
+fn buildRecordBatch(alloc: Allocator, arr: []u64) !RecordBatch {
+    const arrRef = try utils.toArrowArrRef(alloc, arr);
+    // defer arrRef.release();
+
+    const fields = [_]Field{
+        .{ .name = "a", .data_type = &uint64Type, .nullable = false },
+    };
+
+    var recordBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = &fields });
+    defer recordBatchBuilder.deinit();
+
+    try recordBatchBuilder.setColumn(0, arrRef);
+
+    return try recordBatchBuilder.finish();
+}
+
+const GenDatasetResult = struct {
+    build: RecordBatch,
+    probe: RecordBatch,
+};
+
+fn genDataset(alloc: Allocator, rng: std.Random) !GenDatasetResult {
     const ndv = DEFAULT_BUILD_NDV;
 
     var distinctVals = utils.genRandomArray(rng, u64, ndv);
@@ -31,22 +52,10 @@ fn genDataset(alloc: Allocator, rng: std.Random) !void {
     const buildArr = try utils.repeatArr(alloc, u64, DEFAULT_BUILD_SIZE, &distinctVals);
     rng.shuffle(u64, buildArr);
 
-    var buildArrRef = try utils.toArrowArrRef(alloc, buildArr);
-    defer buildArrRef.release();
-
-    const buildArrowArr = zarrow.UInt64Array{ .data = buildArrRef.data() };
-
-    std.debug.print("Size of build arrow array: {}\n", .{buildArrowArr.len()});
-
     const probeArr = try utils.repeatArr(alloc, u64, DEFAULT_PROBE_SIZE, &distinctVals);
     rng.shuffle(u64, probeArr);
 
-    var probeArrRef = try utils.toArrowArrRef(alloc, probeArr);
-    defer probeArrRef.release();
-
-    const probeArrowArr = zarrow.UInt64Array{ .data = probeArrRef.data() };
-
-    std.debug.print("Size of probe arrow array: {}\n", .{probeArrowArr.len()});
+    return .{ .build = try buildRecordBatch(alloc, buildArr), .probe = try buildRecordBatch(alloc, probeArr) };
 }
 
 test "simple_nested_loop_join_benchmark" {
@@ -56,7 +65,10 @@ test "simple_nested_loop_join_benchmark" {
     };
 
     var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
-    try genDataset(smp_allocator, prng.random());
+    const result = try genDataset(smp_allocator, prng.random());
+
+    std.debug.print("Size of build record batch: {}\n", .{result.build.numRows()});
+    std.debug.print("Size of probe record batch: {}\n", .{result.probe.numRows()});
 }
 
 const std = @import("std");
@@ -66,3 +78,8 @@ const Allocator = std.mem.Allocator;
 const utils = @import("utils");
 
 const zarrow = @import("zarrow");
+const Field = zarrow.Field;
+const RecordBatchBuilder = zarrow.RecordBatchBuilder;
+const RecordBatch = zarrow.RecordBatch;
+const ArrayRef = zarrow.ArrayRef;
+const uint64Type = zarrow.DataType{ .uint64 = {} };
