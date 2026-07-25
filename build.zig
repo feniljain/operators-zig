@@ -13,7 +13,6 @@ pub fn build(b: *std.Build) void {
     });
 
     // ==================================
-
     // utils.zig
 
     const utils =  b.createModule(.{
@@ -25,7 +24,18 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("utils", utils);
 
     // ==================================
+    // benchmark.zig
 
+    const benchmark =  b.createModule(.{
+        .root_source_file = b.path("src/benchmark.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe.root_module.addImport("benchmark", benchmark);
+    benchmark.addImport("utils", utils);
+
+    // ==================================
     // zarrow dep
 
     const zarrow_dep = b.dependency("zarrow", .{
@@ -34,7 +44,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("zarrow", zarrow_dep.module("zarrow"));
-    utils.addImport("zarrow", zarrow_dep.module("zarrow"));
+    benchmark.addImport("zarrow", zarrow_dep.module("zarrow"));
 
     // ==================================
 
@@ -54,10 +64,19 @@ pub fn build(b: *std.Build) void {
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
     });
+    exe_tests.root_module.addImport("zarrow", zarrow_dep.module("zarrow"));
+    exe_tests.root_module.addImport("benchmark", benchmark);
 
-    exe_tests.root_module.addImport("utils", utils);
+    const benchmark_tests = b.addTest(.{
+        .root_module = benchmark,
+    });
+    benchmark_tests.root_module.addImport("utils", utils);
+    benchmark_tests.root_module.addImport("zarrow", zarrow_dep.module("zarrow"));
+
     const run_exe_tests = b.addRunArtifact(exe_tests);
+    const run_benchmark_tests = b.addRunArtifact(benchmark_tests);
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&run_benchmark_tests.step);
 }

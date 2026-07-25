@@ -35,20 +35,6 @@ pub fn repeatArr(
     return resultArr;
 }
 
-pub fn toArrowArrRef(
-    alloc: Allocator,
-    arr: []u64
-) !zarrow.ArrayRef {
-    var builder = try zarrow.UInt64Builder.init(alloc, arr.len);
-    defer builder.deinit();
-
-    for(arr) |ele| {
-        try builder.append(ele);
-    }
-
-    return try builder.finish();
-}
-
 test "repeatArr" {
     var arr =  [_]u64{ 1, 2, 3 };
     const smp_allocator: Allocator = .{
@@ -65,5 +51,3 @@ const std = @import("std");
 const SmpAllocator = std.heap.SmpAllocator;
 const Allocator = std.mem.Allocator;
 const expectEqualSlices = std.testing.expectEqualSlices;
-
-const zarrow = @import("zarrow");
