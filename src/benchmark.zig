@@ -3,6 +3,36 @@ const DEFAULT_BUILD_SIZE: u64 = 1000;
 const DEFAULT_PROBE_SIZE: u64 = 1000000;
 const DEFAULT_BUILD_NDV: u64 = 100;
 
+pub const ProbeRecordBatchIter = struct {
+    masterBatch: RecordBatch,
+    trackingIdx: usize,
+
+    const Self = @This();
+
+    pub fn init(alloc: Allocator, probeArr: []u64) !Self {
+        return .{ .masterBatch = try buildRecordBatch(alloc, probeArr, &probeFields), .trackingIdx = 0 };
+    }
+
+    pub fn next(self: *Self) !?RecordBatch {
+        const startIdx = self.trackingIdx;
+        const masterBatchLen = self.masterBatch.numRows();
+
+        if(self.trackingIdx == masterBatchLen) {
+            return null;
+        }
+
+        const endIdx = self.trackingIdx + DEFAULT_BATCH_SIZE;
+        if(endIdx > masterBatchLen) {
+            const remainingLen = masterBatchLen - self.trackingIdx;
+            self.trackingIdx = masterBatchLen;
+            return try self.masterBatch.slice(startIdx, remainingLen);
+        }
+
+        self.trackingIdx += DEFAULT_BATCH_SIZE;
+        return try self.masterBatch.slice(startIdx, DEFAULT_BATCH_SIZE);
+    }
+};
+
 pub fn toArrowArrRef(
     alloc: Allocator,
     arr: []u64
@@ -17,15 +47,19 @@ pub fn toArrowArrRef(
     return try builder.finish();
 }
 
-fn buildRecordBatch(alloc: Allocator, arr: []u64) !RecordBatch {
+pub const buildFields = [_]Field{
+    .{ .name = "a", .data_type = &uint64Type, .nullable = false },
+};
+
+pub const probeFields = [_]Field{
+    .{ .name = "a", .data_type = &uint64Type, .nullable = false },
+};
+
+fn buildRecordBatch(alloc: Allocator, arr: []u64, fields: []const Field) !RecordBatch {
     const arrRef = try toArrowArrRef(alloc, arr);
     // defer arrRef.release();
 
-    const fields = [_]Field{
-        .{ .name = "a", .data_type = &uint64Type, .nullable = false },
-    };
-
-    var recordBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = &fields });
+    var recordBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = fields });
     defer recordBatchBuilder.deinit();
 
     try recordBatchBuilder.setColumn(0, arrRef);
@@ -33,9 +67,9 @@ fn buildRecordBatch(alloc: Allocator, arr: []u64) !RecordBatch {
     return try recordBatchBuilder.finish();
 }
 
-const GenDatasetResult = struct {
+pub const GenDatasetResult = struct {
     build: RecordBatch,
-    probe: RecordBatch,
+    probeIter: ProbeRecordBatchIter,
 };
 
 pub fn genDataset(alloc: Allocator, rng: std.Random) !GenDatasetResult {
@@ -44,7 +78,7 @@ pub fn genDataset(alloc: Allocator, rng: std.Random) !GenDatasetResult {
     var distinctVals = utils.genRandomArray(rng, u64, ndv);
     const max_u64: u64 = std.math.maxInt(u64);
 
-    for (0..distinctVals.len) |idx|  {
+    for(0..distinctVals.len) |idx|  {
         if (distinctVals[idx] > max_u64) {
             distinctVals[idx] = distinctVals[idx] % max_u64;
         }
@@ -56,7 +90,9 @@ pub fn genDataset(alloc: Allocator, rng: std.Random) !GenDatasetResult {
     const probeArr = try utils.repeatArr(alloc, u64, DEFAULT_PROBE_SIZE, &distinctVals);
     rng.shuffle(u64, probeArr);
 
-    return .{ .build = try buildRecordBatch(alloc, buildArr), .probe = try buildRecordBatch(alloc, probeArr) };
+    const probeIter = try ProbeRecordBatchIter.init(alloc, probeArr);
+
+    return .{ .build = try buildRecordBatch(alloc, buildArr, &buildFields), .probeIter = probeIter };
 }
 
 test "genDatasetSimple" {
