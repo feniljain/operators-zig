@@ -10,22 +10,20 @@ pub fn main() !void {
     };
 
     var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
-    // TODO(feniljian): make this generate 8192 rows and keep feeding in
-    // to join algo
     var result = try benchmark.genDataset(alloc, prng.random());
 
     std.debug.print("Size of build record batch: {}\n", .{result.build.numRows()});
 
     const resultFields = try mergeSchemas(alloc, &benchmark.buildFields, &benchmark.probeFields, 0);
-    // std.debug.print("DEBUG::fields::{any}\n", .{fields});
+    // std.debug.print("DEBUG::fields::{any}\n", .{resultFields});
 
     const buildJoinCol = PrimitiveArray(u64){ .data = result.build.column(0).data() };
 
     var validIndices = [_]usize{0} ** benchmark.DEFAULT_BATCH_SIZE;
-    var validIndicesIdx: usize = 0;
     while(try result.probeIter.next()) |probeBatch| {
         std.debug.print("Size of probe record batch: {}\n", .{probeBatch.numRows()});
         const probeJoinCol = PrimitiveArray(u64){ .data = probeBatch.column(0).data() };
+        var validIndicesIdx: usize = 0;
 
         var resultBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = resultFields });
         defer resultBatchBuilder.deinit();
@@ -47,6 +45,11 @@ pub fn main() !void {
                 }
 
                 try resultBatchBuilder.setColumn(colIdx, try arr.finish());
+            }
+
+            // if we have filled all the columns already, return
+            if (resultFields.len == result.build.numColumns()) {
+                break;
             }
 
             var resultColIdx = result.build.numColumns();
