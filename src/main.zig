@@ -1,8 +1,3 @@
-// pub const MergedFieldsAndArrResult = struct {
-//     fields: []Field,
-//     arrs: [][],
-// };
-
 pub fn main() !void {
     const alloc: Allocator = .{
         .ptr = undefined,
@@ -10,64 +5,8 @@ pub fn main() !void {
     };
 
     var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
-    var result = try benchmark.genDataset(alloc, prng.random());
-
-    const resultFields = try mergeSchemas(alloc, &benchmark.buildFields, &benchmark.probeFields, 0);
-
-    const buildJoinCol = PrimitiveArray(u64){ .data = result.build.column(0).data() };
-    var validIndices = [_]usize{0} ** benchmark.DEFAULT_BATCH_SIZE;
-    while(try result.probeIter.next()) |probeBatch| {
-        const probeJoinCol = PrimitiveArray(u64){ .data = probeBatch.column(0).data() };
-
-        for(try buildJoinCol.values(), 0..buildJoinCol.len()) |buildVal, buildIdx| {
-            var resultBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = resultFields });
-            defer resultBatchBuilder.deinit();
-
-            var validIndicesIdx: usize = 0;
-
-            for(try probeJoinCol.values(), 0..probeJoinCol.len()) |probeVal, probeIdx| {
-                if(std.meta.eql(buildVal, probeVal)) {
-                    validIndices[validIndicesIdx] = probeIdx;
-                    validIndicesIdx += 1;
-                }
-            }
-
-            for(0..result.build.numColumns()) |colIdx| {
-                var arr = try UInt64Builder.init(alloc, benchmark.DEFAULT_BATCH_SIZE);
-                const col = PrimitiveArray(u64){ .data = result.build.column(colIdx).data() };
-                const val = try col.value(buildIdx);
-                for(0..benchmark.DEFAULT_BATCH_SIZE) |_| {
-                    try arr.append(val);
-                }
-
-                try resultBatchBuilder.setColumn(colIdx, try arr.finish());
-            }
-
-            // TODO(feniljain): make record batch collector and concat batches to
-            // serve them with DEFAULT_BATCH_SIZE over an iterator
-            //
-            // const resultBatch = try resultBatchBuilder.finish();
-            // const aCol = PrimitiveArray(u64){ .data = resultBatch.column(0).data() };
-            // for(0..aCol.len()) |idx| {
-            //     std.debug.print("{any} ", .{aCol.value(idx)});
-            // }
-            // std.debug.print("\n-----\n", .{});
-
-            // if we have filled all the columns already, return
-            if (resultFields.len == result.build.numColumns()) {
-                continue;
-            }
-
-            var resultColIdx = result.build.numColumns();
-            for(0..probeBatch.numColumns()) |colIdx| {
-                const col: ArrayRef = (probeBatch.column(colIdx)).*;
-                const datum = Datum.fromArray(col);
-                const filteredDatum = try computeDatumTake(datum, &validIndices);
-                try resultBatchBuilder.setColumn(resultColIdx, filteredDatum.asArray() orelse unreachable);
-                resultColIdx += 1;
-            }
-        }
-    }
+    var dataset = try benchmark.genDataset(alloc, prng.random());
+    try nestedLoopJoin(alloc, &dataset);
 }
 
 fn mergeSchemas(alloc: Allocator, buildFields: []const Field, probeFields: []const Field, probeJoinColIdx: u32) ![]Field {
@@ -88,13 +27,6 @@ fn mergeSchemas(alloc: Allocator, buildFields: []const Field, probeFields: []con
     return resultFields;
 }
 
-// TOOD(feniljain):
-// - X implement merge schema
-// - X convert probe side generation to an iterator
-// - loop over iterator, then loop over the received batch, then loop over the build side
-// - accumulate results into new batch with new schema and for start get answers using value(idx) directly
-// - then optimize this loop
-
 // Inner Join Nested Loop Join
 //
 // Datafusion:
@@ -108,6 +40,65 @@ fn mergeSchemas(alloc: Allocator, buildFields: []const Field, probeFields: []con
 // - remove all the unwanted rows using filter bitmap
 // - copy all the required columns into a new batch
 // - return when you hit configured record batch size
+
+fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
+    const resultFields = try mergeSchemas(alloc, &benchmark.buildFields, &benchmark.probeFields, 0);
+
+    const buildJoinCol = PrimitiveArray(u64){ .data = dataset.build.column(0).data() };
+    var validIndices = [_]usize{0} ** benchmark.DEFAULT_BATCH_SIZE;
+    while(try dataset.probeIter.next()) |probeBatch| {
+        const probeJoinCol = PrimitiveArray(u64){ .data = probeBatch.column(0).data() };
+
+        for(try buildJoinCol.values(), 0..buildJoinCol.len()) |buildVal, buildIdx| {
+            var resultBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = resultFields });
+            defer resultBatchBuilder.deinit();
+
+            var validIndicesIdx: usize = 0;
+
+            for(try probeJoinCol.values(), 0..probeJoinCol.len()) |probeVal, probeIdx| {
+                if(std.meta.eql(buildVal, probeVal)) {
+                    validIndices[validIndicesIdx] = probeIdx;
+                    validIndicesIdx += 1;
+                }
+            }
+
+            for(0..dataset.build.numColumns()) |colIdx| {
+                var arr = try UInt64Builder.init(alloc, benchmark.DEFAULT_BATCH_SIZE);
+                const col = PrimitiveArray(u64){ .data = dataset.build.column(colIdx).data() };
+                const val = try col.value(buildIdx);
+                for(0..benchmark.DEFAULT_BATCH_SIZE) |_| {
+                    try arr.append(val);
+                }
+
+                try resultBatchBuilder.setColumn(colIdx, try arr.finish());
+            }
+
+            // TODO(feniljain): make record batch collector and concat batches to
+            // serve them with DEFAULT_BATCH_SIZE over an iterator
+            //
+            // const resultBatch = try resultBatchBuilder.finish();
+            // const aCol = PrimitiveArray(u64){ .data = resultBatch.column(0).data() };
+            // for(0..aCol.len()) |idx| {
+            //     std.debug.print("{any} ", .{aCol.value(idx)});
+            // }
+            // std.debug.print("\n-----\n", .{});
+
+            // if we have filled all the columns already, return
+            if (resultFields.len == dataset.build.numColumns()) {
+                continue;
+            }
+
+            var resultColIdx = dataset.build.numColumns();
+            for(0..probeBatch.numColumns()) |colIdx| {
+                const col: ArrayRef = (probeBatch.column(colIdx)).*;
+                const datum = Datum.fromArray(col);
+                const filteredDatum = try computeDatumTake(datum, &validIndices);
+                try resultBatchBuilder.setColumn(resultColIdx, filteredDatum.asArray() orelse unreachable);
+                resultColIdx += 1;
+            }
+        }
+    }
+}
 
 const std = @import("std");
 const SmpAllocator = std.heap.SmpAllocator;
