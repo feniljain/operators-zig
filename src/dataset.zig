@@ -1,8 +1,3 @@
-pub const DEFAULT_BATCH_SIZE: u64 = 8192;
-const DEFAULT_BUILD_SIZE: u64 = 1000;
-const DEFAULT_PROBE_SIZE: u64 = 1000000;
-const DEFAULT_BUILD_NDV: u64 = 100;
-
 pub const ProbeRecordBatchIter = struct {
     masterBatch: RecordBatch,
     trackingIdx: usize,
@@ -10,7 +5,7 @@ pub const ProbeRecordBatchIter = struct {
     const Self = @This();
 
     pub fn init(alloc: Allocator, probeArr: []u64) !Self {
-        return .{ .masterBatch = try buildRecordBatch(alloc, probeArr, &probeFields), .trackingIdx = 0 };
+        return .{ .masterBatch = try arrowUtils.buildRecordBatch(alloc, probeArr, &probeFields), .trackingIdx = 0 };
     }
 
     pub fn next(self: *Self) !?RecordBatch {
@@ -33,20 +28,6 @@ pub const ProbeRecordBatchIter = struct {
     }
 };
 
-pub fn toArrowArrRef(
-    alloc: Allocator,
-    arr: []u64
-) !zarrow.ArrayRef {
-    var builder = try zarrow.UInt64Builder.init(alloc, arr.len);
-    defer builder.deinit();
-
-    for(arr) |ele| {
-        try builder.append(ele);
-    }
-
-    return try builder.finish();
-}
-
 pub const buildFields = [_]Field{
     .{ .name = "a", .data_type = &uint64Type, .nullable = false },
 };
@@ -55,25 +36,13 @@ pub const probeFields = [_]Field{
     .{ .name = "a", .data_type = &uint64Type, .nullable = false },
 };
 
-fn buildRecordBatch(alloc: Allocator, arr: []u64, fields: []const Field) !RecordBatch {
-    const arrRef = try toArrowArrRef(alloc, arr);
-    // defer arrRef.release();
-
-    var recordBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = fields });
-    defer recordBatchBuilder.deinit();
-
-    try recordBatchBuilder.setColumn(0, arrRef);
-
-    return try recordBatchBuilder.finish();
-}
-
 pub const GenDatasetResult = struct {
     build: RecordBatch,
     probeIter: ProbeRecordBatchIter,
 };
 
 pub fn genDataset(alloc: Allocator, rng: std.Random) !GenDatasetResult {
-    const ndv = DEFAULT_BUILD_NDV;
+    const ndv = arrowUtils.DEFAULT_BUILD_NDV;
 
     var distinctVals = utils.genRandomArray(rng, u64, ndv);
     const max_u64: u64 = std.math.maxInt(u64);
@@ -92,7 +61,7 @@ pub fn genDataset(alloc: Allocator, rng: std.Random) !GenDatasetResult {
 
     const probeIter = try ProbeRecordBatchIter.init(alloc, probeArr);
 
-    return .{ .build = try buildRecordBatch(alloc, buildArr, &buildFields), .probeIter = probeIter };
+    return .{ .build = try arrowUtils.buildRecordBatch(alloc, buildArr, &buildFields), .probeIter = probeIter };
 }
 
 test "genDatasetSimple" {
@@ -114,6 +83,10 @@ const Allocator = std.mem.Allocator;
 const expect = std.testing.expect;
 
 const utils = @import("utils");
+const arrowUtils = @import("arrow_utils");
+const DEFAULT_BATCH_SIZE = arrowUtils.DEFAULT_BATCH_SIZE;
+const DEFAULT_BUILD_SIZE = arrowUtils.DEFAULT_BUILD_SIZE;
+const DEFAULT_PROBE_SIZE = arrowUtils.DEFAULT_PROBE_SIZE;
 
 const zarrow = @import("zarrow");
 const Field = zarrow.Field;

@@ -5,7 +5,7 @@ pub fn main() !void {
     };
 
     var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
-    var dataset = try benchmark.genDataset(alloc, prng.random());
+    var dataset = try datasetMod.genDataset(alloc, prng.random());
     try nestedLoopJoin(alloc, &dataset);
 }
 
@@ -41,10 +41,10 @@ fn mergeSchemas(alloc: Allocator, buildFields: []const Field, probeFields: []con
 // - copy all the required columns into a new batch
 // - return when you hit configured record batch size
 fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
-    const resultFields = try mergeSchemas(alloc, &benchmark.buildFields, &benchmark.probeFields, 0);
+    const resultFields = try mergeSchemas(alloc, &datasetMod.buildFields, &datasetMod.probeFields, 0);
 
     const buildJoinCol = PrimitiveArray(u64){ .data = dataset.build.column(0).data() };
-    var validIndices = [_]usize{0} ** benchmark.DEFAULT_BATCH_SIZE;
+    var validIndices = [_]usize{0} ** DEFAULT_BATCH_SIZE;
     while(try dataset.probeIter.next()) |probeBatch| {
         const probeJoinCol = PrimitiveArray(u64){ .data = probeBatch.column(0).data() };
 
@@ -62,10 +62,10 @@ fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
             }
 
             for(0..dataset.build.numColumns()) |colIdx| {
-                var arr = try UInt64Builder.init(alloc, benchmark.DEFAULT_BATCH_SIZE);
+                var arr = try UInt64Builder.init(alloc, DEFAULT_BATCH_SIZE);
                 const col = PrimitiveArray(u64){ .data = dataset.build.column(colIdx).data() };
                 const val = try col.value(buildIdx);
-                for(0..benchmark.DEFAULT_BATCH_SIZE) |_| {
+                for(0..DEFAULT_BATCH_SIZE) |_| {
                     try arr.append(val);
                 }
 
@@ -104,8 +104,11 @@ const SmpAllocator = std.heap.SmpAllocator;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
-const benchmark = @import("benchmark");
-const GenDatasetResult = benchmark.GenDatasetResult;
+const datasetMod = @import("dataset");
+const GenDatasetResult = datasetMod.GenDatasetResult;
+
+const arrowUtils = @import("arrow_utils");
+const DEFAULT_BATCH_SIZE = arrowUtils.DEFAULT_BATCH_SIZE;
 
 const zarrow = @import("zarrow");
 const RecordBatch = zarrow.RecordBatch;
