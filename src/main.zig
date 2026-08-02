@@ -51,10 +51,11 @@ pub fn main() !void {
 
             var resultColIdx = result.build.numColumns();
             for(0..probeBatch.numColumns()) |colIdx| {
-                const col = probeBatch.column(colIdx);
-                const datum = ComputeDatum.fromArray(*col);
-                const filteredDatum = try computeDatumTake(datum, validIndices);
-                try resultBatchBuilder.setColumn(resultColIdx, filteredDatum.asArray() orelse return null);
+                std.debug.print("probe batch col type: {any}\n", .{@TypeOf(validIndices)});
+                const col: ArrayRef = (probeBatch.column(colIdx)).*;
+                const datum = Datum.fromArray(col);
+                const filteredDatum = try computeDatumTake(datum, &validIndices);
+                try resultBatchBuilder.setColumn(resultColIdx, filteredDatum.asArray() orelse unreachable);
                 resultColIdx += 1;
             }
         }
@@ -113,9 +114,10 @@ const RecordBatch = zarrow.RecordBatch;
 const Schema = zarrow.Schema;
 const Field = zarrow.Field;
 const MutableValidityBitmap = zarrow.MutableValidityBitmap;
-const ComputeDatum = zarrow.ComputeDatum;
+const Datum = zarrow.ComputeDatum;
 const computeDatumTake = zarrow.computeDatumTake;
 const PrimitiveBuilder = zarrow.PrimitiveBuilder;
 const RecordBatchBuilder = zarrow.RecordBatchBuilder;
 const PrimitiveArray = zarrow.PrimitiveArray;
 const UInt64Builder = zarrow.UInt64Builder;
+const ArrayRef = zarrow.ArrayRef;
