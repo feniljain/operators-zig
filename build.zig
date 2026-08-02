@@ -21,7 +21,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    exe.root_module.addImport("utils", utils);
+    // ==================================
+    // deque.zig
+
+    const deque =  b.createModule(.{
+        .root_source_file = b.path("src/deque.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     // ==================================
     // arrow_utils.zig
@@ -32,8 +39,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    exe.root_module.addImport("arrow_utils", arrow_utils);
-
     // ==================================
     // dataset.zig
 
@@ -42,9 +47,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
-    exe.root_module.addImport("dataset", dataset);
-    dataset.addImport("arrow_utils", arrow_utils);
 
     // ==================================
     // zarrow dep
@@ -55,8 +57,15 @@ pub fn build(b: *std.Build) void {
     });
 
     const zarrow_mod = zarrow_dep.module("zarrow");
+
     exe.root_module.addImport("zarrow", zarrow_mod);
+    exe.root_module.addImport("arrow_utils", arrow_utils);
+    exe.root_module.addImport("dataset", dataset);
+
     dataset.addImport("zarrow", zarrow_mod);
+    dataset.addImport("arrow_utils", arrow_utils);
+
+    arrow_utils.addImport("deque", deque);
     arrow_utils.addImport("zarrow", zarrow_mod);
 
     // ==================================
