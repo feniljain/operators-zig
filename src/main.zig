@@ -12,23 +12,19 @@ pub fn main() !void {
     var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
     var result = try benchmark.genDataset(alloc, prng.random());
 
-    std.debug.print("Size of build record batch: {}\n", .{result.build.numRows()});
-
     const resultFields = try mergeSchemas(alloc, &benchmark.buildFields, &benchmark.probeFields, 0);
-    // std.debug.print("DEBUG::fields::{any}\n", .{resultFields});
 
     const buildJoinCol = PrimitiveArray(u64){ .data = result.build.column(0).data() };
-
     var validIndices = [_]usize{0} ** benchmark.DEFAULT_BATCH_SIZE;
     while(try result.probeIter.next()) |probeBatch| {
-        std.debug.print("Size of probe record batch: {}\n", .{probeBatch.numRows()});
         const probeJoinCol = PrimitiveArray(u64){ .data = probeBatch.column(0).data() };
-        var validIndicesIdx: usize = 0;
-
-        var resultBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = resultFields });
-        defer resultBatchBuilder.deinit();
 
         for(try buildJoinCol.values(), 0..buildJoinCol.len()) |buildVal, buildIdx| {
+            var resultBatchBuilder = try RecordBatchBuilder.initBorrowed(alloc, .{ .fields = resultFields });
+            defer resultBatchBuilder.deinit();
+
+            var validIndicesIdx: usize = 0;
+
             for(try probeJoinCol.values(), 0..probeJoinCol.len()) |probeVal, probeIdx| {
                 if(std.meta.eql(buildVal, probeVal)) {
                     validIndices[validIndicesIdx] = probeIdx;
@@ -47,14 +43,23 @@ pub fn main() !void {
                 try resultBatchBuilder.setColumn(colIdx, try arr.finish());
             }
 
+            // TODO(feniljain): make record batch collector and concat batches to
+            // serve them with DEFAULT_BATCH_SIZE over an iterator
+            //
+            // const resultBatch = try resultBatchBuilder.finish();
+            // const aCol = PrimitiveArray(u64){ .data = resultBatch.column(0).data() };
+            // for(0..aCol.len()) |idx| {
+            //     std.debug.print("{any} ", .{aCol.value(idx)});
+            // }
+            // std.debug.print("\n-----\n", .{});
+
             // if we have filled all the columns already, return
             if (resultFields.len == result.build.numColumns()) {
-                break;
+                continue;
             }
 
             var resultColIdx = result.build.numColumns();
             for(0..probeBatch.numColumns()) |colIdx| {
-                std.debug.print("probe batch col type: {any}\n", .{@TypeOf(validIndices)});
                 const col: ArrayRef = (probeBatch.column(colIdx)).*;
                 const datum = Datum.fromArray(col);
                 const filteredDatum = try computeDatumTake(datum, &validIndices);
