@@ -43,8 +43,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    exe.root_module.addImport("zarrow", zarrow_dep.module("zarrow"));
-    benchmark.addImport("zarrow", zarrow_dep.module("zarrow"));
+    const zarrow_mod = zarrow_dep.module("zarrow");
+    exe.root_module.addImport("zarrow", zarrow_mod);
+    benchmark.addImport("zarrow", zarrow_mod);
+    utils.addImport("zarrow", zarrow_mod);
 
     // ==================================
 

@@ -40,7 +40,6 @@ fn mergeSchemas(alloc: Allocator, buildFields: []const Field, probeFields: []con
 // - remove all the unwanted rows using filter bitmap
 // - copy all the required columns into a new batch
 // - return when you hit configured record batch size
-
 fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
     const resultFields = try mergeSchemas(alloc, &benchmark.buildFields, &benchmark.probeFields, 0);
 
