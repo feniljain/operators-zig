@@ -43,6 +43,8 @@ fn mergeSchemas(alloc: Allocator, buildFields: []const Field, probeFields: []con
 fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
     const resultFields = try mergeSchemas(alloc, &datasetMod.buildFields, &datasetMod.probeFields, 0);
 
+    var coalesceBatches = try CoalesceBatches.init(alloc, DEFAULT_BATCH_SIZE);
+
     const buildJoinCol = PrimitiveArray(u64){ .data = dataset.build.column(0).data() };
     var validIndices = [_]usize{0} ** DEFAULT_BATCH_SIZE;
     while(try dataset.probeIter.next()) |probeBatch| {
@@ -95,6 +97,8 @@ fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
                 try resultBatchBuilder.setColumn(resultColIdx, filteredDatum.asArray() orelse unreachable);
                 resultColIdx += 1;
             }
+
+            try coalesceBatches.push(try resultBatchBuilder.finish());
         }
     }
 }
@@ -109,6 +113,7 @@ const GenDatasetResult = datasetMod.GenDatasetResult;
 
 const arrowUtils = @import("arrow_utils");
 const DEFAULT_BATCH_SIZE = arrowUtils.DEFAULT_BATCH_SIZE;
+const CoalesceBatches = arrowUtils.CoalesceBatches;
 
 const zarrow = @import("zarrow");
 const RecordBatch = zarrow.RecordBatch;

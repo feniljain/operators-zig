@@ -67,6 +67,7 @@ pub fn build(b: *std.Build) void {
 
     arrow_utils.addImport("deque", deque);
     arrow_utils.addImport("zarrow", zarrow_mod);
+    arrow_utils.addImport("dataset", dataset);
 
     // ==================================
 

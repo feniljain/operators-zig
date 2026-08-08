@@ -30,13 +30,12 @@ pub fn buildRecordBatch(alloc: Allocator, arr: []u64, fields: []const Field) !Re
 }
 
 pub fn mergeBatches(alloc: Allocator, first: RecordBatch, second: RecordBatch) !RecordBatch {
-    const schemaRef = try SchemaRef.fromBorrowed(alloc, (first.schema()).*);
-    var builder = try RecordBatchBuilder.initBorrowed(alloc, schemaRef);
+    var builder = try RecordBatchBuilder.initBorrowed(alloc, first.schema().*);
     defer builder.deinit();
 
     for (0..first.numColumns()) |colIdx| {
-        const mergedArr = try concatArrayRefs(first.column(colIdx), second.column(colIdx));
-        builder.setColumn(colIdx, mergedArr);
+        const mergedArr = try concatArrayRefs(alloc, dataset.buildFields[0].data_type.*, &[_]ArrayRef{ first.column(colIdx).*, second.column(colIdx).* });
+        try builder.setColumn(colIdx, mergedArr);
     }
 
     return try builder.finish();
@@ -45,16 +44,16 @@ pub fn mergeBatches(alloc: Allocator, first: RecordBatch, second: RecordBatch) !
 pub const CoalesceBatches = struct {
     targetBatchSize: u64,
     alloc: Allocator,
-    resultQueue: Deque,
+    resultQueue: Deque(RecordBatch),
     incompleteBatchOpt: ?RecordBatch,
 
     const Self = @This();
 
-    pub fn init(alloc: Allocator, targetBatchSize: u64) Self {
+    pub fn init(alloc: Allocator, targetBatchSize: u64) !Self {
         return .{
             .alloc = alloc,
             .targetBatchSize = targetBatchSize,
-            .resultQueue = Deque.initCapacity(alloc, 10),
+            .resultQueue = try Deque(RecordBatch).initCapacity(alloc, 10),
             .incompleteBatchOpt = null,
         };
     }
@@ -65,11 +64,11 @@ pub const CoalesceBatches = struct {
     // - if len is less than 8192, merge with current stored record
     // till 8192 is reached and then push that to queue.
     // - And finally pop from queue when asked for result
-    pub fn registerRecordBatch(self: *Self, recordBatch: RecordBatch) !void {
-        var batchTrackingIdx = 0;
+    pub fn push(self: *Self, recordBatch: RecordBatch) !void {
+        var batchTrackingIdx: usize = 0;
         const nRows = recordBatch.numRows();
         while(nRows >= self.targetBatchSize) {
-            self.resultQueue.pushBack(try recordBatch.slice(batchTrackingIdx, self.targetBatchSize));
+            try self.resultQueue.pushBack(self.alloc, try recordBatch.slice(batchTrackingIdx, self.targetBatchSize));
             batchTrackingIdx += self.targetBatchSize;
         }
 
@@ -82,17 +81,17 @@ pub const CoalesceBatches = struct {
         // if incomplete batch is not present, current record batch becomes the one
         var neededRows = remainingRows;
         if (self.incompleteBatchOpt) |incompleteBatch| {
-            neededRows = self.targetBatchSize - self.incompleteBatchOpt.numRows();
+            neededRows = self.targetBatchSize - incompleteBatch.numRows();
             if(remainingRows <= neededRows) {
                 const batch = try mergeBatches(self.alloc, incompleteBatch, try recordBatch.slice(batchTrackingIdx, remainingRows));
                 if(remainingRows == neededRows) {
-                    self.resultQueue.pushBack(batch);
+                    try self.resultQueue.pushBack(self.alloc, batch);
                 } else {
                     self.incompleteBatchOpt = batch;
                 }
             } else {
                 const batch = try mergeBatches(self.alloc, incompleteBatch, try recordBatch.slice(batchTrackingIdx, neededRows));
-                self.resultQueue.pushBack(batch);
+                try self.resultQueue.pushBack(self.alloc, batch);
 
                 batchTrackingIdx += neededRows;
                 self.incompleteBatchOpt = try recordBatch.slice(batchTrackingIdx, remainingRows - neededRows);
@@ -107,7 +106,10 @@ pub const CoalesceBatches = struct {
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Deque = @import("deque");
+const deque = @import("deque");
+const Deque = deque.Deque;
+
+const dataset = @import("dataset");
 
 const zarrow = @import("zarrow");
 const Field = zarrow.Field;
@@ -115,4 +117,3 @@ const RecordBatchBuilder = zarrow.RecordBatchBuilder;
 const RecordBatch = zarrow.RecordBatch;
 const ArrayRef = zarrow.ArrayRef;
 const concatArrayRefs = zarrow.concatArrayRefs;
-const SchemaRef = zarrow.SchemaRef;
