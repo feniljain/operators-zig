@@ -67,7 +67,10 @@ pub const CoalesceBatches = struct {
     pub fn push(self: *Self, recordBatch: RecordBatch) !void {
         var batchTrackingIdx: usize = 0;
         const nRows = recordBatch.numRows();
-        while(nRows >= self.targetBatchSize) {
+        std.debug.print("DEBUG::push::init\n", .{});
+
+        while((nRows - batchTrackingIdx) >= self.targetBatchSize) {
+            std.debug.print("DEBUG::pushing to result queue 1 - {any}-{any}-{any}\n", .{batchTrackingIdx, self.targetBatchSize, nRows});
             try self.resultQueue.pushBack(self.alloc, try recordBatch.slice(batchTrackingIdx, self.targetBatchSize));
             batchTrackingIdx += self.targetBatchSize;
         }
@@ -75,6 +78,7 @@ pub const CoalesceBatches = struct {
         // we have exhausted record batch
         const remainingRows = nRows - batchTrackingIdx;
         if(remainingRows == 0) {
+            std.debug.print("DEBUG::push::remainingRows\n", .{});
             return;
         }
 
@@ -85,12 +89,15 @@ pub const CoalesceBatches = struct {
             if(remainingRows <= neededRows) {
                 const batch = try mergeBatches(self.alloc, incompleteBatch, try recordBatch.slice(batchTrackingIdx, remainingRows));
                 if(remainingRows == neededRows) {
+                    std.debug.print("DEBUG::pushing to result queue 2\n", .{});
                     try self.resultQueue.pushBack(self.alloc, batch);
                 } else {
                     self.incompleteBatchOpt = batch;
                 }
             } else {
                 const batch = try mergeBatches(self.alloc, incompleteBatch, try recordBatch.slice(batchTrackingIdx, neededRows));
+
+                std.debug.print("DEBUG::pushing to result queue 3\n", .{});
                 try self.resultQueue.pushBack(self.alloc, batch);
 
                 batchTrackingIdx += neededRows;
@@ -99,8 +106,13 @@ pub const CoalesceBatches = struct {
         }
     }
 
-    // pub fn next(self: *Self) !?RecordBatch {
-    // }
+    pub fn iterator(self: *const Self) Deque(RecordBatch).Iterator {
+        return self.resultQueue.iterator();
+    }
+
+    pub fn getResultQueue(self: *const Self) Deque(RecordBatch) {
+        return self.resultQueue;
+    }
 };
 
 const std = @import("std");

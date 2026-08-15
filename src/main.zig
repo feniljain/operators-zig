@@ -43,7 +43,7 @@ fn mergeSchemas(alloc: Allocator, buildFields: []const Field, probeFields: []con
 fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
     const resultFields = try mergeSchemas(alloc, &datasetMod.buildFields, &datasetMod.probeFields, 0);
 
-    var coalesceBatches = try CoalesceBatches.init(alloc, DEFAULT_BATCH_SIZE);
+    // var coalesceBatches = try CoalesceBatches.init(alloc, DEFAULT_BATCH_SIZE);
 
     const buildJoinCol = PrimitiveArray(u64){ .data = dataset.build.column(0).data() };
     var validIndices = [_]usize{0} ** DEFAULT_BATCH_SIZE;
@@ -77,15 +77,16 @@ fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
             // TODO(feniljain): make record batch collector and concat batches to
             // serve them with DEFAULT_BATCH_SIZE over an iterator
             //
-            // const resultBatch = try resultBatchBuilder.finish();
-            // const aCol = PrimitiveArray(u64){ .data = resultBatch.column(0).data() };
-            // for(0..aCol.len()) |idx| {
-            //     std.debug.print("{any} ", .{aCol.value(idx)});
-            // }
-            // std.debug.print("\n-----\n", .{});
+            const resultBatch = try resultBatchBuilder.finish();
+            const aCol = PrimitiveArray(u64){ .data = resultBatch.column(0).data() };
+            for(0..aCol.len()) |idx| {
+                std.debug.print("{any} ", .{aCol.value(idx)});
+            }
+            std.debug.print("\n-----\n", .{});
 
             // if we have filled all the columns already, return
             if (resultFields.len == dataset.build.numColumns()) {
+                // try coalesceBatches.push(try resultBatchBuilder.finish());
                 continue;
             }
 
@@ -98,9 +99,17 @@ fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
                 resultColIdx += 1;
             }
 
-            try coalesceBatches.push(try resultBatchBuilder.finish());
+            // try coalesceBatches.push(try resultBatchBuilder.finish());
         }
     }
+
+    // std.debug.print("DEBUG::printing results of {any} batches\n", .{coalesceBatches.getResultQueue().len});
+    // var batchItr = coalesceBatches.iterator();
+    // while(batchItr.next()) |batch| {
+    //     std.debug.print("DEBUG::batch size: {any}\n", .{batch.numRows()});
+    // }
+
+    std.debug.print("DEBUG::done", .{});
 }
 
 const std = @import("std");
