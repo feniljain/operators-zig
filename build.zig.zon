@@ -36,6 +36,10 @@
             .url = "git+https://github.com/tylitianrui/zarrow?ref=master#c40b4cb3afa2e6fecf9c55e9501c61caa55216a1",
             .hash = "zarrow-0.0.2-I8BLE-9qTgBb5RURo07Hy6ai194IWlg1xnPNNwjL_Lxq",
         },
+        .zig_tracy = .{
+            .url = "git+https://github.com/cipharius/zig-tracy/?ref=master#22f290947ca272a4aea2a7e5b00ec29fb0c1a8d6",
+            .hash = "zig_tracy-0.0.5-aOIqsYFsAAB11_thqyvA3Gq_7vCruca5bAuTWgySlBEz",
+        },
     },
     .paths = .{
         "build.zig",

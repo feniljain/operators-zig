@@ -1,12 +1,18 @@
 pub fn main() !void {
+    tracy.setThreadName("Main");
+    defer tracy.message("Graceful main thread exit");
+
     const alloc: Allocator = .{
         .ptr = undefined,
         .vtable = &SmpAllocator.vtable,
     };
 
     var prng = std.Random.DefaultPrng.init(0x1234_5678_9ABC_DEF0);
-    var dataset = try datasetMod.genDataset(alloc, prng.random());
-    try nestedLoopJoin(alloc, &dataset);
+
+    for(0..10) |_| {
+        var dataset = try datasetMod.genDataset(alloc, prng.random());
+        try nestedLoopJoin(alloc, &dataset);
+    }
 }
 
 fn mergeSchemas(alloc: Allocator, buildFields: []const Field, probeFields: []const Field, probeJoinColIdx: u32) ![]Field {
@@ -47,7 +53,11 @@ fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
 
     const buildJoinCol = PrimitiveArray(u64){ .data = dataset.build.column(0).data() };
     var validIndices = [_]usize{0} ** DEFAULT_BATCH_SIZE;
+
     while(try dataset.probeIter.next()) |probeBatch| {
+        const zone = tracy.initZone(@src(), .{ .name = "Nested loop join" });
+        defer zone.deinit();
+
         const probeJoinCol = PrimitiveArray(u64){ .data = probeBatch.column(0).data() };
 
         for(try buildJoinCol.values(), 0..buildJoinCol.len()) |buildVal, buildIdx| {
@@ -82,6 +92,8 @@ fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
 
             var resultColIdx = dataset.build.numColumns();
             for(0..probeBatch.numColumns()) |colIdx| {
+                // TODO(feniljain): ignore already inserted join column
+
                 const col: ArrayRef = (probeBatch.column(colIdx)).*;
                 const datum = Datum.fromArray(col);
                 const filteredDatum = try computeDatumTake(datum, &validIndices);
@@ -93,7 +105,7 @@ fn nestedLoopJoin(alloc: Allocator, dataset: *GenDatasetResult) !void {
         }
     }
 
-    std.debug.print("DEBUG::resultant number of {any} batches\n", .{coalesceBatches.getResultQueue().len});
+    std.debug.print("DEBUG::resultant number of batches: {any}\n", .{coalesceBatches.getResultQueue().len});
 }
 
 const std = @import("std");
@@ -120,3 +132,5 @@ const RecordBatchBuilder = zarrow.RecordBatchBuilder;
 const PrimitiveArray = zarrow.PrimitiveArray;
 const UInt64Builder = zarrow.UInt64Builder;
 const ArrayRef = zarrow.ArrayRef;
+
+const tracy = @import("tracy");

@@ -3,6 +3,9 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const tracy_enable = b.option(bool, "tracy_enable", "Enable profiling") orelse false;
+
     const exe = b.addExecutable(.{
         .name = "joins",
         .root_module = b.createModule(.{
@@ -58,7 +61,21 @@ pub fn build(b: *std.Build) void {
 
     const zarrow_mod = zarrow_dep.module("zarrow");
 
+    // ==================================
+    // zig-tracy dep
+
+    const tracy_dep = b.dependency("zig_tracy", .{
+        .target = target,
+        .optimize = optimize,
+        .tracy_enable = tracy_enable,
+    });
+
+    const tracy_mod = tracy_dep.module("tracy");
+
+    // ==================================
+
     exe.root_module.addImport("zarrow", zarrow_mod);
+    exe.root_module.addImport("tracy", tracy_mod);
     exe.root_module.addImport("arrow_utils", arrow_utils);
     exe.root_module.addImport("dataset", dataset);
 
@@ -71,6 +88,8 @@ pub fn build(b: *std.Build) void {
 
     // ==================================
 
+    exe.linkLibrary(tracy_dep.artifact("tracy"));
+    exe.linkLibCpp();
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");
